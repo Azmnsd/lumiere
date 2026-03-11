@@ -502,23 +502,26 @@ function applyPixelFilter(ctx,filterId,x,y,w,h){
   ctx.putImageData(data,x,y);
 }
 
-// Wrapper: draw image to canvas with iOS-safe filter
-// Strategy: always use pixel manipulation (works everywhere).
-// Only use ctx.filter on confirmed-working browsers as an optimization.
-function drawWithFilter(ctx,src,sx,sy,sw,sh,dx,dy,dw,dh,filterId){
+// Wrapper: draw image to canvas with iOS-safe filter + optional mirror
+function drawWithFilter(ctx,src,sx,sy,sw,sh,dx,dy,dw,dh,filterId,mirror){
+  ctx.save();
+  if(mirror){
+    // Flip horizontally around the center of the destination rect
+    ctx.translate(dx*2+dw,0);
+    ctx.scale(-1,1);
+  }
   ctx.filter='none';
   ctx.drawImage(src,sx,sy,sw,sh,dx,dy,dw,dh);
   if(filterId!=='normal'){
     if(_filterSupported){
-      // Re-draw with native filter on top (desktop browsers)
       ctx.filter=FILTERS.find(f=>f.id===filterId)?.css||'none';
       ctx.drawImage(src,sx,sy,sw,sh,dx,dy,dw,dh);
       ctx.filter='none';
     } else {
-      // Pixel manipulation fallback (iOS Safari)
       applyPixelFilter(ctx,filterId,dx,dy,dw,dh);
     }
   }
+  ctx.restore();
 }
 
 /* ═══════════════════════════════════════
@@ -1043,7 +1046,10 @@ function startLiveAnim(){
         const sw=src.videoWidth||src.naturalWidth||640;
         const sh=src.videoHeight||src.naturalHeight||640;
         const s=Math.min(sw,sh),sx=(sw-s)/2,sy=(sh-s)/2;
-        drawWithFilter(ctx,src,sx,sy,s,s,x,y,iW,iH,flt.id);
+        // Mirror video clips (raw stream is unmirrored); photos already mirrored at capture
+        const isVideo=src instanceof HTMLVideoElement;
+        const shouldMirror=isVideo&&S.facing==='user';
+        drawWithFilter(ctx,src,sx,sy,s,s,x,y,iW,iH,flt.id,shouldMirror);
       }
     }
 
@@ -1069,6 +1075,7 @@ function buildReel(){
       vel.muted=true;vel.loop=true;vel.playsInline=true;vel.autoplay=true;
       vel.src=URL.createObjectURL(blob);
       vel.style.filter=FILTERS.find(x=>x.id===S.filter)?.css||'none';
+      if(S.facing==='user') vel.style.transform='scaleX(-1)';
       wrap.appendChild(vel);
     } else {
       const img=document.createElement('img');
