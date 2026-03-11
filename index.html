@@ -161,7 +161,16 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 .strip-hdr{width:100%;display:flex;align-items:center;justify-content:space-between;
   padding:16px 18px 14px;border-bottom:1px solid #eeddd7;flex-shrink:0}
 .strip-logo{font-family:'Cormorant Garamond',serif;font-size:20px;font-style:italic;color:#2a1a14}
-.p4-retake{font-size:8px;letter-spacing:.3em;text-transform:uppercase;
+.end-session-bar{width:100%;padding:0 18px 10px;flex-shrink:0}
+.end-session-btn{width:100%;padding:11px;border:1px solid #ddc0b4;background:none;
+  color:#b07060;font-family:'DM Mono',monospace;font-size:8px;letter-spacing:.35em;
+  text-transform:uppercase;cursor:pointer;transition:all .2s;border-radius:2px}
+.end-session-btn:active{background:#fde8e0;border-color:#c47a6a;color:#2a1a14}
+
+.p4-end{font-size:8px;letter-spacing:.3em;text-transform:uppercase;
+  cursor:pointer;border:1px solid #ddc0b4;padding:9px 12px;background:none;
+  color:#b07060;font-family:'DM Mono',monospace;transition:all .2s}
+.p4-end:active{background:#fde8e0;color:#2a1a14}
   cursor:pointer;border:1px solid #ddc0b4;padding:9px 14px;background:none;
   color:#2a1a14;font-family:'DM Mono',monospace;transition:all .2s}
 .p4-retake:active{background:#eeddd7}
@@ -294,13 +303,19 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
       <button class="retake-last" id="retake-last" disabled>↺ redo</button>
     </div>
   </div>
+  <div class="end-session-bar">
+    <button class="end-session-btn" id="end-session-btn">✕ end session</button>
+  </div>
 </div>
 
 <!-- PAGE 4 — STRIP -->
 <div id="p4" class="screen">
   <div class="strip-hdr">
     <span class="strip-logo">Lumière</span>
-    <button class="p4-retake" id="p4-retake">↺ retake</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="p4-retake" id="p4-retake">↺ retake</button>
+      <button class="p4-end" id="p4-end">✕ end</button>
+    </div>
   </div>
   <div class="filter-scroll" id="filter-scroll"></div>
   <div class="p4-scroll">
@@ -379,25 +394,29 @@ const FILTERS=[
    manipulation via getImageData/putImageData.
 ═══════════════════════════════════════ */
 
-// Detect ctx.filter support once
+// Detect ctx.filter support properly —
+// iOS Safari accepts ctx.filter assignment but silently ignores it when drawing.
+// We must verify it actually changes pixels, not just that the property sets.
 const _filterSupported=(()=>{
   try{
-    const c=document.createElement('canvas');c.width=1;c.height=1;
-    const x=c.getContext('2d');x.filter='grayscale(1)';
-    x.fillRect(0,0,1,1);
-    return x.filter==='grayscale(1)';
+    const c=document.createElement('canvas');c.width=2;c.height=1;
+    const x=c.getContext('2d');
+    // draw a white pixel with no filter
+    x.filter='none';
+    x.fillStyle='#ffffff';x.fillRect(0,0,1,1);
+    // draw a white pixel with grayscale filter — should produce same result
+    // but with a COLOR filter like sepia it should change values
+    x.filter='sepia(1)';
+    x.fillStyle='#0000ff';x.fillRect(1,0,1,1); // blue -> should become sepia brown if filter works
+    const px=x.getImageData(1,0,1,1).data;
+    // sepia of pure blue (#0000ff) produces a non-blue pixel (r>0, b<200)
+    // if filter was ignored, r stays 0 and b stays 255
+    return px[0]>10; // red channel increased = filter actually worked
   }catch(e){return false;}
 })();
 
 function applyPixelFilter(ctx,filterId,x,y,w,h){
   if(filterId==='normal')return;
-  // Try native ctx.filter first (non-iOS)
-  // On iOS we fall through to pixel manipulation
-  if(_filterSupported){
-    // native already applied during drawImage — nothing extra needed
-    return;
-  }
-  // Pixel-level fallback for iOS
   let data;
   try{data=ctx.getImageData(x,y,w,h);}catch(e){return;}
   const d=data.data;
@@ -484,16 +503,21 @@ function applyPixelFilter(ctx,filterId,x,y,w,h){
 }
 
 // Wrapper: draw image to canvas with iOS-safe filter
+// Strategy: always use pixel manipulation (works everywhere).
+// Only use ctx.filter on confirmed-working browsers as an optimization.
 function drawWithFilter(ctx,src,sx,sy,sw,sh,dx,dy,dw,dh,filterId){
-  const flt=FILTERS.find(f=>f.id===filterId)||FILTERS[0];
-  if(_filterSupported&&filterId!=='normal'){
-    ctx.filter=flt.css;
-    ctx.drawImage(src,sx,sy,sw,sh,dx,dy,dw,dh);
-    ctx.filter='none';
-  } else {
-    ctx.filter='none';
-    ctx.drawImage(src,sx,sy,sw,sh,dx,dy,dw,dh);
-    applyPixelFilter(ctx,filterId,dx,dy,dw,dh);
+  ctx.filter='none';
+  ctx.drawImage(src,sx,sy,sw,sh,dx,dy,dw,dh);
+  if(filterId!=='normal'){
+    if(_filterSupported){
+      // Re-draw with native filter on top (desktop browsers)
+      ctx.filter=FILTERS.find(f=>f.id===filterId)?.css||'none';
+      ctx.drawImage(src,sx,sy,sw,sh,dx,dy,dw,dh);
+      ctx.filter='none';
+    } else {
+      // Pixel manipulation fallback (iOS Safari)
+      applyPixelFilter(ctx,filterId,dx,dy,dw,dh);
+    }
   }
 }
 
@@ -1210,7 +1234,22 @@ $('p4-retake').addEventListener('click',async()=>{
   show(p3);await initCam();
 });
 
-$('save-strip').addEventListener('click',saveStrip);
+async function endSession(){
+  if(S.sessionRunning){S.abortSession=true;await sleep(400);}
+  if(S.shootMR&&S.shootMR.state!=='inactive')S.shootMR.stop();
+  if(S.sessionMR&&S.sessionMR.state!=='inactive')S.sessionMR.stop();
+  S.liveRunning=false;
+  if(S.liveAnimId)cancelAnimationFrame(S.liveAnimId);
+  S.liveVideoEls.forEach(v=>{try{v.pause();v.src='';}catch(e){}});
+  S.liveVideoEls=[];
+  stopCam();
+  S.photos=[];S.clipBlobs=[];S.currentShot=0;
+  S.sessionRunning=false;S.abortSession=false;S.sessionBlob=null;
+  show(p1);
+}
+
+$('end-session-btn').addEventListener('click',endSession);
+$('p4-end').addEventListener('click',endSession);
 $('share-btn').addEventListener('click',shareIt);
 $('save-video').addEventListener('click',saveVideo);
 
