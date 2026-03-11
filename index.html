@@ -983,25 +983,62 @@ function startLiveAnim(){
 
   // Preload static photo fallbacks
   const fallbacks=[];
-  let fbLoaded=0;
   S.photos.forEach((url,i)=>{
-    const img=new Image();
-    img.onload=()=>{fallbacks[i]=img;fbLoaded++;};
-    img.src=url;
+    const img=new Image();img.onload=()=>{fallbacks[i]=img;};img.src=url;
   });
 
-  function frame(){
+  // Per-slot state machine
+  // Each slot independently cycles: [play clip → freeze 1s] × 2
+  // State: { phase:'video'|'freeze', loop:0, freezeUntil:0 }
+  const slotState=S.liveVideoEls.map(()=>({phase:'video',loop:0,freezeUntil:0}));
+
+  // Seek all videos to start and play
+  S.liveVideoEls.forEach(vel=>{
+    if(vel&&vel.src){vel.currentTime=0;vel.loop=false;vel.play().catch(()=>{});}
+  });
+
+  function drawStrip(){
     if(!S.liveRunning)return;
     const flt=FILTERS.find(x=>x.id===S.filter);
+    const now=performance.now();
     ctx.fillStyle=col.bg;ctx.fillRect(0,0,totW,totH);
 
     for(let i=0;i<n;i++){
       const c=i%cols,r=Math.floor(i/cols);
       const x=c*(colW+(cols>1?gap:0))+pad,y=pad+r*(iH+gap);
       const vel=S.liveVideoEls[i];
+      const ss=slotState[i];
+
+      // ── State transitions ──
+      if(ss.phase==='video'){
+        // Video ended or has no duration → switch to freeze
+        const ended=vel&&(vel.ended||(vel.duration>0&&vel.currentTime>=vel.duration-0.05));
+        if(ended||!vel||!vel.src){
+          ss.phase='freeze';
+          ss.freezeUntil=now+1000;
+        }
+      } else if(ss.phase==='freeze'){
+        if(now>=ss.freezeUntil){
+          ss.loop++;
+          if(ss.loop<2){
+            // Play again from start
+            ss.phase='video';
+            if(vel&&vel.src){vel.currentTime=0;vel.play().catch(()=>{});}
+          }
+          // loop>=2: stay frozen on last frame permanently
+        }
+      }
+
+      // ── Draw ──
       let src=null;
-      if(vel&&vel.readyState>=2){src=vel;}
-      else if(fallbacks[i]){src=fallbacks[i];}
+      if(ss.phase==='video'&&vel&&vel.readyState>=2){
+        src=vel;
+      } else if(fallbacks[i]){
+        src=fallbacks[i]; // freeze uses photo
+      } else if(vel&&vel.readyState>=2){
+        src=vel;
+      }
+
       if(src){
         const sw=src.videoWidth||src.naturalWidth||640;
         const sh=src.videoHeight||src.naturalHeight||640;
@@ -1009,12 +1046,13 @@ function startLiveAnim(){
         drawWithFilter(ctx,src,sx,sy,s,s,x,y,iW,iH,flt.id);
       }
     }
+
     drawStripLabels(ctx,cols,rows,iH,iW,pad,gap,lblH,colW,col,1);
     const photoAreaH=pad+rows*(iH+gap)-gap+pad;
     if(brd.id!=='none')drawBorder(ctx,brd.id,totW,photoAreaH,col,cols,colW,gap,1);
-    S.liveAnimId=requestAnimationFrame(frame);
+    S.liveAnimId=requestAnimationFrame(drawStrip);
   }
-  S.liveAnimId=requestAnimationFrame(frame);
+  S.liveAnimId=requestAnimationFrame(drawStrip);
 }
 
 /* ═══════════════════════════════════════
