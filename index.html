@@ -1114,7 +1114,7 @@ function drawBorder(ctx,t,w,h,col,cols,colW,gw,SC){
 function saveStrip(){
   stripCanvas.toBlob(b=>{
     const a=document.createElement('a');
-    a.download=`lumiere-strip-${Date.now()}.png`;
+    a.download=`lumiere.png`;
     a.href=URL.createObjectURL(b);a.click();
   },'image/png');
 }
@@ -1241,7 +1241,7 @@ async function saveVideo(){
     const ext=chunks[0]?.type?.includes('mp4')?'mp4':'webm';
     const blob=new Blob(chunks,{type:mime||'video/webm'});
     const a=document.createElement('a');
-    a.download=`lumiere-strip-${Date.now()}.${ext}`;
+    a.download=`lumiere`;
     a.href=URL.createObjectURL(blob);a.click();
 
   }catch(e){
