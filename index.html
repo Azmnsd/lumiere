@@ -244,6 +244,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
       <div class="shot-row" id="shot-row">
         <button class="shot-opt on" data-n="2">2<small>1 col</small></button>
         <button class="shot-opt" data-n="3">3<small>1 col</small></button>
+        <button class="shot-opt" data-n="4">4<small>1 col</small></button>
         <button class="shot-opt" data-n="6">6<small>2 cols</small></button>
         <button class="shot-opt" data-n="8">8<small>2 cols</small></button>
       </div>
@@ -259,8 +260,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
     <div>
       <span class="sec-lbl">countdown timer</span>
       <div class="timer-row" id="timer-row">
-        <button class="t-opt on" data-t="3">3s</button>
-        <button class="t-opt" data-t="5">5s</button>
+        <button class="t-opt on" data-t="5">5s</button>
         <button class="t-opt" data-t="10">10s</button>
         <button class="t-opt" data-t="20">20s</button>
       </div>
@@ -525,7 +525,7 @@ function drawWithFilter(ctx,src,sx,sy,sw,sh,dx,dy,dw,dh,filterId){
    STATE
 ═══════════════════════════════════════ */
 const S={
-  shots:2, timerSec:3, stripColor:'white', border:'none',
+  shots:2, timerSec:5, stripColor:'white', border:'none',
   filter:'normal', facing:'user',
   photos:[],       // dataURLs
   clipBlobs:[],    // Blob per shot clip
@@ -875,9 +875,9 @@ function buildStaticStrip(){
   const brd=BORDERS.find(b=>b.id===S.border)||BORDERS[0];
   const flt=FILTERS.find(x=>x.id===S.filter);
   const cols=n>=6?2:1,rows=Math.ceil(n/cols);
-  // High quality: 4× scale for download
-  const SC=4;
-  const iW=280*SC,iH=280*SC,pad=14*SC,gap=8*SC,lblH=56*SC;
+  // High quality: 8× scale for download (~2240px wide per photo)
+  const SC=8;
+  const iW=280*SC,iH=280*SC,pad=14*SC,gap=8*SC,lblH=72*SC;
   const colW=iW+pad*2;
   const totW=cols*colW+(cols>1?gap:0);
   const totH=pad+rows*(iH+gap)-gap+pad+lblH;
@@ -909,19 +909,24 @@ function drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,b
 
 function drawStripLabels(ctx,cols,rows,iH,iW,pad,gap,lblH,colW,col,SC){
   SC=SC||1;
-  const fs1=11*SC, fs2=8*SC, spacing=10*SC;
+  const fs1=16*SC, fs2=10*SC, spacing=12*SC;
   for(let c=0;c<cols;c++){
     const cx=c*(colW+(cols>1?gap:0))+colW/2;
     const zoneTop=pad+rows*(iH+gap)-gap;
     const blockH=fs1+spacing+fs2+2*SC;
     const baseY=zoneTop+(lblH-blockH)/2;
     ctx.textAlign='center';
+    // Logo — use full opacity, heavier weight
+    ctx.globalAlpha=1;
     ctx.fillStyle=col.tc||'#888';
-    ctx.font=`300 ${fs1}px "DM Mono",monospace`;
-    ctx.fillText('✦ LUMIÈRE ✦',cx,baseY+fs1);
+    ctx.font=`500 ${fs1}px "DM Mono",monospace`;
+    ctx.fillText('✦  LUMIÈRE  ✦',cx,baseY+fs1);
+    // Date — slightly muted
     ctx.font=`300 ${fs2}px "DM Mono",monospace`;
-    ctx.fillStyle=(col.tc||'#888')+'99';
+    ctx.globalAlpha=0.65;
+    ctx.fillStyle=col.tc||'#888';
     ctx.fillText(new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),cx,baseY+fs1+spacing+fs2);
+    ctx.globalAlpha=1;
   }
 }
 
@@ -967,7 +972,7 @@ function startLiveAnim(){
   S.liveRunning=true;
   const n=S.photos.length;
   const cols=n>=6?2:1,rows=Math.ceil(n/cols);
-  const iW=280,iH=280,pad=14,gap=8,lblH=56;
+  const iW=280,iH=280,pad=14,gap=8,lblH=72;
   const colW=iW+pad*2;
   const totW=cols*colW+(cols>1?gap:0);
   const totH=pad+rows*(iH+gap)-gap+pad+lblH;
@@ -1090,7 +1095,7 @@ async function saveVideo(){
     // ── Setup offscreen canvas matching the live strip ──
     const n=S.photos.length;
     const cols=n>=6?2:1,rows=Math.ceil(n/cols);
-    const iW=280,iH=280,pad=14,gap=8,lblH=56;
+    const iW=280,iH=280,pad=14,gap=8,lblH=72;
     const colW=iW+pad*2;
     const totW=cols*colW+(cols>1?gap:0);
     const totH=pad+rows*(iH+gap)-gap+pad+lblH;
