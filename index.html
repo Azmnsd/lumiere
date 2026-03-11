@@ -170,8 +170,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 .p4-end{font-size:8px;letter-spacing:.3em;text-transform:uppercase;
   cursor:pointer;border:1px solid #ddc0b4;padding:9px 12px;background:none;
   color:#b07060;font-family:'DM Mono',monospace;transition:all .2s}
-.p4-end:active{background:#fde8e0;color:#2a1a14;
-  cursor:pointer; border:1px solid #ddc0b4; padding:9px 14px;background:none;
+.p4-end:active{background:#fde8e0;color:#2a1a14}
+  cursor:pointer;border:1px solid #ddc0b4;padding:9px 14px;background:none;
   color:#2a1a14;font-family:'DM Mono',monospace;transition:all .2s}
 .p4-retake:active{background:#eeddd7}
 
@@ -1114,7 +1114,7 @@ function drawBorder(ctx,t,w,h,col,cols,colW,gw,SC){
 function saveStrip(){
   stripCanvas.toBlob(b=>{
     const a=document.createElement('a');
-    a.download=`lumiere.png`;
+    a.download=`lumiere-strip-${Date.now()}.png`;
     a.href=URL.createObjectURL(b);a.click();
   },'image/png');
 }
@@ -1130,118 +1130,138 @@ async function shareIt(){
 async function saveVideo(){
   if(!S.clipBlobs.length){alert('No clips to export.');return;}
 
-  // Show progress feedback
   const btn=$('save-video');
   const origText=btn.innerHTML;
   btn.innerHTML='<span class="act-icon">⏳</span>rendering…';
   btn.disabled=true;
 
   try{
-    // ── Setup offscreen canvas matching the live strip ──
+    // ── HD canvas — 2× scale for crisp video ──
+    const VS=2;
     const n=S.photos.length;
     const cols=n>=6?2:1,rows=Math.ceil(n/cols);
-    const iW=280,iH=280,pad=14,gap=8,lblH=72;
+    const iW=280*VS,iH=280*VS,pad=14*VS,gap=8*VS,lblH=72*VS;
     const colW=iW+pad*2;
     const totW=cols*colW+(cols>1?gap:0);
     const totH=pad+rows*(iH+gap)-gap+pad+lblH;
 
     const offscreen=document.createElement('canvas');
-    offscreen.width=totW;offscreen.height=totH;
+    offscreen.width=totW; offscreen.height=totH;
     const ctx=offscreen.getContext('2d');
     const col=COLORS.find(c=>c.id===S.stripColor)||COLORS[0];
     const brd=BORDERS.find(b=>b.id===S.border)||BORDERS[0];
     const flt=FILTERS.find(x=>x.id===S.filter);
+    const mirror=S.facing==='user';
 
-    // ── Create fresh video elements for export (separate from live strip) ──
+    // ── Load export video elements ──
     const exportVids=[];
-    let ready=0;
     await new Promise(res=>{
+      let ready=0;
+      const total=S.clipBlobs.length;
       S.clipBlobs.forEach((blob,i)=>{
         const v=document.createElement('video');
         v.muted=true;v.playsInline=true;
         if(blob){
           v.src=URL.createObjectURL(blob);
-          v.oncanplay=()=>{ready++;if(ready===S.clipBlobs.length)res();};
-          v.onerror=()=>{ready++;if(ready===S.clipBlobs.length)res();};
-        } else {ready++;if(ready===S.clipBlobs.length)res();}
+          v.oncanplay=()=>{ready++;if(ready===total)res();};
+          v.onerror=  ()=>{ready++;if(ready===total)res();};
+        } else {ready++;if(ready===total)res();}
         exportVids.push(v);
       });
-      setTimeout(res,3000); // safety timeout
+      setTimeout(res,4000);
     });
 
-    // ── Find longest clip duration ──
-    let maxDur=0;
-    exportVids.forEach(v=>{if(v.duration&&isFinite(v.duration))maxDur=Math.max(maxDur,v.duration);});
-    if(maxDur<=0)maxDur=S.timerSec||3; // fallback to timer length
-
-    // ── Setup MediaRecorder on offscreen canvas ──
-    const mime=getSupportedMime();
-    let stream;
-    try{stream=offscreen.captureStream(30);}
-    catch(e){stream=offscreen.captureStream(30);}
-    const chunks=[];
-    const mr=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:4000000}:{videoBitsPerSecond:4000000});
-    mr.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data);};
-
-    // ── Preload fallback images ──
+    // ── Preload still-photo fallbacks ──
     const fallbacks=[];
     await Promise.all(S.photos.map((url,i)=>new Promise(res=>{
-      const img=new Image();img.onload=()=>{fallbacks[i]=img;res();};img.onerror=res;img.src=url;
+      const img=new Image();
+      img.onload=()=>{fallbacks[i]=img;res();};
+      img.onerror=res; img.src=url;
     })));
 
-    // ── Render function ──
-    function renderFrame(){
+    // ── Clip durations ──
+    const durations=exportVids.map(v=>
+      (v.duration&&isFinite(v.duration)&&v.duration>0)?v.duration:(S.timerSec||5)
+    );
+    const maxDur=Math.max(...durations);
+    const FREEZE_MS=1000;
+
+    // ── Pick best mime & max bitrate ──
+    const mime=getSupportedMime();
+    const bitrateOptions=[20000000,16000000,12000000,8000000];
+    let mr,stream;
+    stream=offscreen.captureStream(60);
+    for(const br of bitrateOptions){
+      try{
+        mr=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:br}:{videoBitsPerSecond:br});
+        break;
+      }catch(e){continue;}
+    }
+    if(!mr) mr=new MediaRecorder(stream);
+
+    const chunks=[];
+    mr.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data);};
+
+    // ── Render one frame to canvas ──
+    function renderFrame(slotSrcs){
       ctx.fillStyle=col.bg;ctx.fillRect(0,0,totW,totH);
       for(let i=0;i<n;i++){
         const c=i%cols,r=Math.floor(i/cols);
         const x=c*(colW+(cols>1?gap:0))+pad,y=pad+r*(iH+gap);
-        const v=exportVids[i];
-        let src=null;
-        if(v&&v.readyState>=2)src=v;
-        else if(fallbacks[i])src=fallbacks[i];
+        const src=slotSrcs[i];
         if(src){
-          const sw=src.videoWidth||src.naturalWidth||640;
-          const sh=src.videoHeight||src.naturalHeight||640;
+          const sw=src.videoWidth||src.naturalWidth||iW;
+          const sh=src.videoHeight||src.naturalHeight||iH;
           const s=Math.min(sw,sh),sx=(sw-s)/2,sy=(sh-s)/2;
-          drawWithFilter(ctx,src,sx,sy,s,s,x,y,iW,iH,flt.id);
+          const isVid=src instanceof HTMLVideoElement;
+          drawWithFilter(ctx,src,sx,sy,s,s,x,y,iW,iH,flt.id,isVid&&mirror);
         }
       }
-      drawStripLabels(ctx,cols,rows,iH,iW,pad,gap,lblH,colW,col,1);
+      drawStripLabels(ctx,cols,rows,iH,iW,pad,gap,lblH,colW,col,VS);
       const photoAreaH=pad+rows*(iH+gap)-gap+pad;
-      if(brd.id!=='none')drawBorder(ctx,brd.id,totW,photoAreaH,col,cols,colW,gap,1);
+      if(brd.id!=='none')drawBorder(ctx,brd.id,totW,photoAreaH,col,cols,colW,gap,VS);
     }
 
-    // ── Play through twice ──
-    mr.start(100);
-    const LOOPS=2;
-    for(let loop=0;loop<LOOPS;loop++){
-      // seek all to start & play
-      await Promise.all(exportVids.map(v=>{
-        if(!v.src)return Promise.resolve();
-        return new Promise(res=>{v.currentTime=0;v.onseeked=()=>{v.play().catch(()=>{});res();};v.onseeked=res;v.currentTime=0;});
-      }));
-      exportVids.forEach(v=>{if(v.src)v.play().catch(()=>{});});
-
-      // render for maxDur seconds
-      const startTime=performance.now();
-      await new Promise(res=>{
+    // ── Render loop for a duration, using given sources ──
+    function renderDuration(srcs,durationMs){
+      return new Promise(res=>{
+        const start=performance.now();
         function tick(){
-          renderFrame();
-          if(performance.now()-startTime < maxDur*1000){requestAnimationFrame(tick);}
+          renderFrame(srcs);
+          if(performance.now()-start<durationMs) requestAnimationFrame(tick);
           else res();
         }
         requestAnimationFrame(tick);
       });
     }
 
-    // ── Stop & export ──
+    // ── Play through twice: video → freeze 1s, ×2 ──
+    mr.start(100);
+    for(let loop=0;loop<2;loop++){
+      // Seek all to start and play
+      await Promise.all(exportVids.map(v=>{
+        if(!v.src)return Promise.resolve();
+        return new Promise(res=>{
+          v.onseeked=()=>{v.play().catch(()=>{});res();};
+          v.currentTime=0;
+        });
+      }));
+      // Render video phase
+      await renderDuration(exportVids,maxDur*1000);
+      // Pause all, switch to stills for freeze phase
+      exportVids.forEach(v=>v.pause());
+      const freezeSrcs=exportVids.map((v,i)=>fallbacks[i]||v);
+      await renderDuration(freezeSrcs,FREEZE_MS);
+    }
+
+    // ── Finalize ──
     await new Promise(res=>{mr.onstop=res;mr.stop();});
     exportVids.forEach(v=>{try{v.pause();v.src='';}catch(e){}});
 
     const ext=chunks[0]?.type?.includes('mp4')?'mp4':'webm';
     const blob=new Blob(chunks,{type:mime||'video/webm'});
     const a=document.createElement('a');
-    a.download=`lumiere`;
+    a.download=`lumiere-strip-${Date.now()}.${ext}`;
     a.href=URL.createObjectURL(blob);a.click();
 
   }catch(e){
