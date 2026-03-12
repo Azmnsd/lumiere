@@ -170,7 +170,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 .p4-end{font-size:8px;letter-spacing:.3em;text-transform:uppercase;
   cursor:pointer;border:1px solid #ddc0b4;padding:9px 12px;background:none;
   color:#b07060;font-family:'DM Mono',monospace;transition:all .2s}
-.p4-end:active{background:#fde8e0;color:#2a1a14}
+.p4-end:active{background:#fde8e0;color:#2a1a14;
   cursor:pointer;border:1px solid #ddc0b4;padding:9px 14px;background:none;
   color:#2a1a14;font-family:'DM Mono',monospace;transition:all .2s}
 .p4-retake:active{background:#eeddd7}
@@ -1136,13 +1136,10 @@ async function saveVideo(){
   btn.disabled=true;
 
   try{
-    // ── 4K canvas — dynamic scale so width ≈ 3840px ──
+    // ── HD canvas — 2× scale for crisp video ──
+    const VS=2;
     const n=S.photos.length;
     const cols=n>=6?2:1,rows=Math.ceil(n/cols);
-    // Target ~3840px wide; base colW = (280+14*2) = 308px
-    const baseColW=308, baseGap=8;
-    const baseTotW=cols*baseColW+(cols>1?baseGap:0);
-    const VS=Math.max(1,Math.ceil(1080/baseTotW)); // target ~1080px wide
     const iW=280*VS,iH=280*VS,pad=14*VS,gap=8*VS,lblH=72*VS;
     const colW=iW+pad*2;
     const totW=cols*colW+(cols>1?gap:0);
@@ -1191,26 +1188,19 @@ async function saveVideo(){
 
     // ── Pick best mime & max bitrate ──
     const mime=getSupportedMime();
-    const bitrateOptions=[24000000,20000000,16000000,12000000];
+    const bitrateOptions=[20000000,16000000,12000000,8000000];
     let mr,stream;
     stream=offscreen.captureStream(60);
-    // Try each bitrate with mime, then mime alone, then bare
-    outer:for(const br of bitrateOptions){
-      for(const opts of [
-        mime?{mimeType:mime,videoBitsPerSecond:br}:null,
-        mime?{mimeType:mime}:null,
-        {videoBitsPerSecond:br},
-        {}
-      ]){
-        if(!opts)continue;
-        try{mr=new MediaRecorder(stream,opts);break outer;}catch(e){}
-      }
+    for(const br of bitrateOptions){
+      try{
+        mr=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:br}:{videoBitsPerSecond:br});
+        break;
+      }catch(e){continue;}
     }
-    if(!mr)mr=new MediaRecorder(stream);
+    if(!mr) mr=new MediaRecorder(stream);
 
     const chunks=[];
     mr.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data);};
-    mr.onerror=e=>{console.error('MediaRecorder error',e);};
 
     // ── Render one frame to canvas ──
     function renderFrame(slotSrcs){
@@ -1233,40 +1223,29 @@ async function saveVideo(){
     }
 
     // ── Render loop for a duration, using given sources ──
-    // Uses a fixed 30fps setTimeout so the captureStream gets evenly-spaced frames
     function renderDuration(srcs,durationMs){
       return new Promise(res=>{
         const start=performance.now();
-        const FRAME_MS=1000/60;
         function tick(){
           renderFrame(srcs);
-          const elapsed=performance.now()-start;
-          if(elapsed<durationMs){
-            const next=FRAME_MS-((performance.now()-start)%FRAME_MS);
-            setTimeout(tick,Math.max(0,next));
-          } else {
-            res();
-          }
+          if(performance.now()-start<durationMs) requestAnimationFrame(tick);
+          else res();
         }
-        tick();
+        requestAnimationFrame(tick);
       });
     }
 
     // ── Play through twice: video → freeze 1s, ×2 ──
-    // Seek before starting recorder so no blank/white frames are captured at the start
-    const seekAll=()=>Promise.all(exportVids.map(v=>{
-      if(!v.src)return Promise.resolve();
-      return new Promise(res=>{
-        v.onseeked=()=>{v.play().catch(()=>{});res();};
-        v.currentTime=0;
-      });
-    }));
-    await seekAll();
-    // Render one frame with photos before recorder starts to prime the canvas
-    renderFrame(fallbacks.map((f,i)=>f||exportVids[i]));
     mr.start(100);
     for(let loop=0;loop<2;loop++){
-      if(loop>0) await seekAll();
+      // Seek all to start and play
+      await Promise.all(exportVids.map(v=>{
+        if(!v.src)return Promise.resolve();
+        return new Promise(res=>{
+          v.onseeked=()=>{v.play().catch(()=>{});res();};
+          v.currentTime=0;
+        });
+      }));
       // Render video phase
       await renderDuration(exportVids,maxDur*1000);
       // Pause all, switch to stills for freeze phase
@@ -1279,13 +1258,8 @@ async function saveVideo(){
     await new Promise(res=>{mr.onstop=res;mr.stop();});
     exportVids.forEach(v=>{try{v.pause();v.src='';}catch(e){}});
 
-    if(!chunks.length){
-      throw new Error('No video data was recorded. Your browser may not support canvas video export.');
-    }
-
-    const recordedType=mr.mimeType||mime||'video/webm';
-    const ext=recordedType.includes('mp4')?'mp4':'webm';
-    const blob=new Blob(chunks,{type:recordedType});
+    const ext=chunks[0]?.type?.includes('mp4')?'mp4':'webm';
+    const blob=new Blob(chunks,{type:mime||'video/webm'});
     const a=document.createElement('a');
     a.download=`lumiere-strip-${Date.now()}.${ext}`;
     a.href=URL.createObjectURL(blob);a.click();
