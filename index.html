@@ -1253,16 +1253,20 @@ async function saveVideo(){
     }
 
     // ── Play through twice: video → freeze 1s, ×2 ──
+    // Seek before starting recorder so no blank/white frames are captured at the start
+    const seekAll=()=>Promise.all(exportVids.map(v=>{
+      if(!v.src)return Promise.resolve();
+      return new Promise(res=>{
+        v.onseeked=()=>{v.play().catch(()=>{});res();};
+        v.currentTime=0;
+      });
+    }));
+    await seekAll();
+    // Render one frame with photos before recorder starts to prime the canvas
+    renderFrame(fallbacks.map((f,i)=>f||exportVids[i]));
     mr.start(100);
     for(let loop=0;loop<2;loop++){
-      // Seek all to start and play
-      await Promise.all(exportVids.map(v=>{
-        if(!v.src)return Promise.resolve();
-        return new Promise(res=>{
-          v.onseeked=()=>{v.play().catch(()=>{});res();};
-          v.currentTime=0;
-        });
-      }));
+      if(loop>0) await seekAll();
       // Render video phase
       await renderDuration(exportVids,maxDur*1000);
       // Pause all, switch to stills for freeze phase
