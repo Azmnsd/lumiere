@@ -169,8 +169,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 
 .p4-end{font-size:8px;letter-spacing:.3em;text-transform:uppercase;
   cursor:pointer;border:1px solid #ddc0b4;padding:9px 12px;background:none;
-  color:#b07060;font-family:'DM Mono',monospace;transition:all .2s}
-.p4-end:active{background:#fde8e0;color:#2a1a14;
+  color:#b07060;font-family:'DM Mono',monospace;transition:all .2s;
+.p4-end:active{background:#fde8e0;color:#2a1a14}
   cursor:pointer;border:1px solid #ddc0b4;padding:9px 14px;background:none;
   color:#2a1a14;font-family:'DM Mono',monospace;transition:all .2s}
 .p4-retake:active{background:#eeddd7}
@@ -1136,10 +1136,13 @@ async function saveVideo(){
   btn.disabled=true;
 
   try{
-    // ── HD canvas — 2× scale for crisp video ──
-    const VS=2;
+    // ── 4K canvas — dynamic scale so width ≈ 3840px ──
     const n=S.photos.length;
     const cols=n>=6?2:1,rows=Math.ceil(n/cols);
+    // Target ~3840px wide; base colW = (280+14*2) = 308px
+    const baseColW=308, baseGap=8;
+    const baseTotW=cols*baseColW+(cols>1?baseGap:0);
+    const VS=Math.floor(3840/baseTotW); // e.g. 12 for 1-col, 6 for 2-col
     const iW=280*VS,iH=280*VS,pad=14*VS,gap=8*VS,lblH=72*VS;
     const colW=iW+pad*2;
     const totW=cols*colW+(cols>1?gap:0);
@@ -1188,7 +1191,7 @@ async function saveVideo(){
 
     // ── Pick best mime & max bitrate ──
     const mime=getSupportedMime();
-    const bitrateOptions=[20000000,16000000,12000000,8000000];
+    const bitrateOptions=[80000000,60000000,40000000,20000000,10000000];
     let mr,stream;
     stream=offscreen.captureStream(60);
     for(const br of bitrateOptions){
@@ -1342,4 +1345,3 @@ buildP2();
 </script>
 </body>
 </html>
-
