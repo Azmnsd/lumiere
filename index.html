@@ -170,7 +170,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 .p4-end{font-size:8px;letter-spacing:.3em;text-transform:uppercase;
   cursor:pointer;border:1px solid #ddc0b4;padding:9px 12px;background:none;
   color:#b07060;font-family:'DM Mono',monospace;transition:all .2s}
-.p4-end:active{background:#fde8e0;color:#2a1a14;
+.p4-end:active{background:#fde8e0;color:#2a1a14}
   cursor:pointer;border:1px solid #ddc0b4;padding:9px 14px;background:none;
   color:#2a1a14;font-family:'DM Mono',monospace;transition:all .2s}
 .p4-retake:active{background:#eeddd7}
@@ -1193,7 +1193,7 @@ async function saveVideo(){
     const mime=getSupportedMime();
     const bitrateOptions=[16000000,12000000,8000000,5000000];
     let mr,stream;
-    stream=offscreen.captureStream(60);
+    stream=offscreen.captureStream(30);
     // Try each bitrate with mime, then mime alone, then bare
     outer:for(const br of bitrateOptions){
       for(const opts of [
@@ -1233,15 +1233,22 @@ async function saveVideo(){
     }
 
     // ── Render loop for a duration, using given sources ──
+    // Uses a fixed 30fps setTimeout so the captureStream gets evenly-spaced frames
     function renderDuration(srcs,durationMs){
       return new Promise(res=>{
         const start=performance.now();
+        const FRAME_MS=1000/30;
         function tick(){
           renderFrame(srcs);
-          if(performance.now()-start<durationMs) requestAnimationFrame(tick);
-          else res();
+          const elapsed=performance.now()-start;
+          if(elapsed<durationMs){
+            const next=FRAME_MS-((performance.now()-start)%FRAME_MS);
+            setTimeout(tick,Math.max(0,next));
+          } else {
+            res();
+          }
         }
-        requestAnimationFrame(tick);
+        tick();
       });
     }
 
