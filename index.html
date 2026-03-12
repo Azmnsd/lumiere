@@ -877,37 +877,59 @@ function buildStaticStrip(){
   const col=COLORS.find(c=>c.id===S.stripColor)||COLORS[0];
   const brd=BORDERS.find(b=>b.id===S.border)||BORDERS[0];
   const flt=FILTERS.find(x=>x.id===S.filter);
-  const cols=n>=6?2:1,rows=Math.ceil(n/cols);
-  // Adaptive scale: max quality that fits within mobile canvas pixel limits
-  const baseW=cols*308+(cols>1?8:0);
-  const baseH=rows*288+92;
-  const SC=Math.min(8,Math.max(2,Math.floor(Math.sqrt(16000000/(baseW*baseH)))));
-  const iW=280*SC,iH=280*SC,pad=14*SC,gap=8*SC,lblH=72*SC;
+  // Always 2 cols; n≤4: duplicate both sides; n≥6: split photos
+  const cols=2;
+  const duplicate=n<=4;
+  const rows=duplicate?n:Math.ceil(n/2);
+  // Scale content to fit exactly in fixed 1200×1800 canvas
+  const FIXED_W=1200,FIXED_H=1800;
+  const baseW=2*(280+2*14)+8; // 624 at SC=1
+  const baseH=14+rows*(280+8)-8+14+72; // rows*288+92
+  const SC=Math.min(FIXED_W/baseW,FIXED_H/baseH);
+  const iW=Math.round(280*SC),iH=iW;
+  const pad=Math.round(14*SC),gap=Math.round(8*SC),lblH=Math.round(72*SC);
   const colW=iW+pad*2;
-  const totW=cols*colW+(cols>1?gap:0);
+  const totW=2*colW+gap;
   const totH=pad+rows*(iH+gap)-gap+pad+lblH;
-  stripCanvas.width=totW;stripCanvas.height=totH;
+  const offX=Math.round((FIXED_W-totW)/2);
+  const offY=Math.round((FIXED_H-totH)/2);
+  stripCanvas.width=FIXED_W;stripCanvas.height=FIXED_H;
   const ctx=stripCanvas.getContext('2d');
-  ctx.fillStyle=col.bg;ctx.fillRect(0,0,totW,totH);
+  ctx.fillStyle=col.bg;ctx.fillRect(0,0,FIXED_W,FIXED_H);
   let loaded=0;const imgs=[];
   S.photos.forEach((url,i)=>{
     const img=new Image();img.onload=()=>{
       imgs[i]=img;loaded++;
-      if(loaded===n)drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,brd,flt,colW,SC);
+      if(loaded===n){
+        ctx.save();ctx.translate(offX,offY);
+        drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,brd,flt,colW,SC,duplicate);
+        ctx.restore();
+      }
     };img.src=url;
   });
 }
 
-function drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,brd,flt,colW,SC){
+function drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,brd,flt,colW,SC,duplicate){
   SC=SC||1;
-  imgs.forEach((img,i)=>{
-    const c=i%cols,r=Math.floor(i/cols);
-    const x=c*(colW+(cols>1?gap:0))+pad,y=pad+r*(iH+gap);
-    const s=Math.min(img.width,img.height),sx=(img.width-s)/2,sy=(img.height-s)/2;
-    drawWithFilter(ctx,img,sx,sy,s,s,x,y,iW,iH,flt.id);
-  });
+  if(duplicate){
+    // Both columns show identical photos
+    for(let c=0;c<2;c++){
+      for(let r=0;r<rows;r++){
+        const img=imgs[r];if(!img)continue;
+        const x=c*(colW+gap)+pad,y=pad+r*(iH+gap);
+        const s=Math.min(img.width,img.height),sx=(img.width-s)/2,sy=(img.height-s)/2;
+        drawWithFilter(ctx,img,sx,sy,s,s,x,y,iW,iH,flt.id);
+      }
+    }
+  } else {
+    imgs.forEach((img,i)=>{
+      const c=i%cols,r=Math.floor(i/cols);
+      const x=c*(colW+gap)+pad,y=pad+r*(iH+gap);
+      const s=Math.min(img.width,img.height),sx=(img.width-s)/2,sy=(img.height-s)/2;
+      drawWithFilter(ctx,img,sx,sy,s,s,x,y,iW,iH,flt.id);
+    });
+  }
   drawStripLabels(ctx,cols,rows,iH,iW,pad,gap,lblH,colW,col,SC);
-  // border wraps only the photo area (not the label zone below)
   const photoAreaH=pad+rows*(iH+gap)-gap+pad;
   if(brd.id!=='none')drawBorder(ctx,brd.id,totW,photoAreaH,col,cols,colW,gap,SC);
 }
@@ -1121,12 +1143,25 @@ function saveStrip(){
   },'image/png');
 }
 async function shareIt(){
-  stripCanvas.toBlob(async b=>{
+  // Compose 9:16 story-sized canvas so it fits without cropping/zoom
+  const storyW=1080,storyH=1920;
+  const sc2=document.createElement('canvas');
+  sc2.width=storyW;sc2.height=storyH;
+  const sctx=sc2.getContext('2d');
+  const col=COLORS.find(c=>c.id===S.stripColor)||COLORS[0];
+  sctx.fillStyle=col.bg;sctx.fillRect(0,0,storyW,storyH);
+  const scale=Math.min(storyW/stripCanvas.width,storyH/stripCanvas.height);
+  const dw=Math.round(stripCanvas.width*scale);
+  const dh=Math.round(stripCanvas.height*scale);
+  sctx.drawImage(stripCanvas,Math.round((storyW-dw)/2),Math.round((storyH-dh)/2),dw,dh);
+  sc2.toBlob(async b=>{
     const f=new File([b],'lumiere.jpg',{type:'image/jpeg'});
     if(navigator.canShare&&navigator.canShare({files:[f]})){
       try{await navigator.share({files:[f],title:'✦ Lumière ✦'});return;}catch(e){}
     }
-    saveStrip();
+    // fallback: download story-sized image
+    const a=document.createElement('a');a.download='lumiere-story.jpg';
+    a.href=URL.createObjectURL(b);a.click();
   },'image/jpeg',.93);
 }
 async function saveVideo(){
