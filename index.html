@@ -1114,15 +1114,15 @@ function drawBorder(ctx,t,w,h,col,cols,colW,gw,SC){
 function saveStrip(){
   stripCanvas.toBlob(b=>{
     const a=document.createElement('a');
-    a.download=`lumiere-strip-${Date.now()}.png`;
+    a.download=`lumiere.png`;
     a.href=URL.createObjectURL(b);a.click();
   },'image/png');
 }
 async function shareIt(){
   stripCanvas.toBlob(async b=>{
-    const f=new File([b],'lumiere-strip.jpg',{type:'image/jpeg'});
+    const f=new File([b],'lumiere.jpg',{type:'image/jpeg'});
     if(navigator.canShare&&navigator.canShare({files:[f]})){
-      try{await navigator.share({files:[f],title:'✦ Lumière'});return;}catch(e){}
+      try{await navigator.share({files:[f],title:'✦ Lumière ✦'});return;}catch(e){}
     }
     saveStrip();
   },'image/jpeg',.93);
@@ -1188,7 +1188,7 @@ async function saveVideo(){
 
     // ── Pick best mime & max bitrate ──
     const mime=getSupportedMime();
-    const bitrateOptions=[20000000,16000000,12000000,8000000];
+    const bitrateOptions=[20000000];
     let mr,stream;
     stream=offscreen.captureStream(60);
     for(const br of bitrateOptions){
@@ -1261,7 +1261,7 @@ async function saveVideo(){
     const ext=chunks[0]?.type?.includes('mp4')?'mp4':'webm';
     const blob=new Blob(chunks,{type:mime||'video/webm'});
     const a=document.createElement('a');
-    a.download=`lumiere-strip-${Date.now()}.${ext}`;
+    a.download=`lumiere`;
     a.href=URL.createObjectURL(blob);a.click();
 
   }catch(e){
