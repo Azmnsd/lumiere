@@ -878,8 +878,10 @@ function buildStaticStrip(){
   const brd=BORDERS.find(b=>b.id===S.border)||BORDERS[0];
   const flt=FILTERS.find(x=>x.id===S.filter);
   const cols=n>=6?2:1,rows=Math.ceil(n/cols);
-  // High quality: 8× scale for download (~2240px wide per photo)
-  const SC=8;
+  // Adaptive scale: max quality that fits within mobile canvas pixel limits
+  const baseW=cols*308+(cols>1?8:0);
+  const baseH=rows*288+92;
+  const SC=Math.min(8,Math.max(2,Math.floor(Math.sqrt(16000000/(baseW*baseH)))));
   const iW=280*SC,iH=280*SC,pad=14*SC,gap=8*SC,lblH=72*SC;
   const colW=iW+pad*2;
   const totW=cols*colW+(cols>1?gap:0);
