@@ -1142,7 +1142,7 @@ async function saveVideo(){
     // Target ~3840px wide; base colW = (280+14*2) = 308px
     const baseColW=308, baseGap=8;
     const baseTotW=cols*baseColW+(cols>1?baseGap:0);
-    const VS=Math.max(1,Math.floor(2048/baseTotW)); // target ~2K wide
+    const VS=Math.max(1,Math.ceil(1080/baseTotW)); // target ~1080px wide
     const iW=280*VS,iH=280*VS,pad=14*VS,gap=8*VS,lblH=72*VS;
     const colW=iW+pad*2;
     const totW=cols*colW+(cols>1?gap:0);
@@ -1191,9 +1191,9 @@ async function saveVideo(){
 
     // ── Pick best mime & max bitrate ──
     const mime=getSupportedMime();
-    const bitrateOptions=[16000000,12000000,8000000,5000000];
+    const bitrateOptions=[24000000,20000000,16000000,12000000];
     let mr,stream;
-    stream=offscreen.captureStream(30);
+    stream=offscreen.captureStream(60);
     // Try each bitrate with mime, then mime alone, then bare
     outer:for(const br of bitrateOptions){
       for(const opts of [
@@ -1237,7 +1237,7 @@ async function saveVideo(){
     function renderDuration(srcs,durationMs){
       return new Promise(res=>{
         const start=performance.now();
-        const FRAME_MS=1000/30;
+        const FRAME_MS=1000/60;
         function tick(){
           renderFrame(srcs);
           const elapsed=performance.now()-start;
