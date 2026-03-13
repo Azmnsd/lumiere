@@ -877,14 +877,22 @@ function buildStaticStrip(){
   const col=COLORS.find(c=>c.id===S.stripColor)||COLORS[0];
   const brd=BORDERS.find(b=>b.id===S.border)||BORDERS[0];
   const flt=FILTERS.find(x=>x.id===S.filter);
-  // Always 2 cols; n≤4: duplicate both sides; n≥6: split photos
+  // Always 2 cols; n<=4: duplicate both sides; n>=6: split photos
   const cols=2;
   const duplicate=n<=4;
   const rows=duplicate?n:Math.ceil(n/2);
-  const iW=280,iH=280,pad=14,gap=8,lblH=72,SC=1;
-  const colW=iW+pad*2;
-  const totW=2*colW+gap;
-  const totH=pad+rows*(iH+gap)-gap+pad+lblH;
+  // Each strip is exactly 600x1800; total canvas 1200x1800
+  const SW=600,SH=1800;
+  const pad=20,lblH=100;
+  const photoGap=8;
+  const availH=SH-pad*2-lblH;
+  const iH=Math.floor((availH-(rows-1)*photoGap)/rows);
+  const iW=SW-pad*2;
+  const colW=SW;
+  const gap=0;
+  const totW=SW*2;
+  const totH=SH;
+  const SC=1;
   stripCanvas.width=totW;stripCanvas.height=totH;
   const ctx=stripCanvas.getContext('2d');
   ctx.fillStyle=col.bg;ctx.fillRect(0,0,totW,totH);
@@ -893,7 +901,7 @@ function buildStaticStrip(){
     const img=new Image();img.onload=()=>{
       imgs[i]=img;loaded++;
       if(loaded===n){
-        drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,brd,flt,colW,SC,duplicate);
+        drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,photoGap,lblH,totW,totH,col,brd,flt,colW,SC,duplicate);
       }
     };img.src=url;
   });
@@ -906,7 +914,7 @@ function drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,b
     for(let c=0;c<2;c++){
       for(let r=0;r<rows;r++){
         const img=imgs[r];if(!img)continue;
-        const x=c*(colW+gap)+pad,y=pad+r*(iH+gap);
+        const x=c*colW+pad,y=pad+r*(iH+gap);
         const s=Math.min(img.width,img.height),sx=(img.width-s)/2,sy=(img.height-s)/2;
         drawWithFilter(ctx,img,sx,sy,s,s,x,y,iW,iH,flt.id);
       }
@@ -914,7 +922,7 @@ function drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,b
   } else {
     imgs.forEach((img,i)=>{
       const c=i%cols,r=Math.floor(i/cols);
-      const x=c*(colW+gap)+pad,y=pad+r*(iH+gap);
+      const x=c*colW+pad,y=pad+r*(iH+gap);
       const s=Math.min(img.width,img.height),sx=(img.width-s)/2,sy=(img.height-s)/2;
       drawWithFilter(ctx,img,sx,sy,s,s,x,y,iW,iH,flt.id);
     });
@@ -928,7 +936,7 @@ function drawStripLabels(ctx,cols,rows,iH,iW,pad,gap,lblH,colW,col,SC){
   SC=SC||1;
   const fs1=16*SC, fs2=10*SC, spacing=12*SC;
   for(let c=0;c<cols;c++){
-    const cx=c*(colW+(cols>1?gap:0))+colW/2;
+    const cx=c*colW+colW/2;
     const zoneTop=pad+rows*(iH+gap)-gap;
     const blockH=fs1+spacing+fs2+2*SC;
     const baseY=zoneTop+(lblH-blockH)/2;
@@ -1164,13 +1172,20 @@ async function saveVideo(){
 
   try{
     // ── HD canvas — 2× scale for crisp video ──
-    const VS=2;
     const n=S.photos.length;
-    const cols=n>=6?2:1,rows=Math.ceil(n/cols);
-    const iW=280*VS,iH=280*VS,pad=14*VS,gap=8*VS,lblH=72*VS;
-    const colW=iW+pad*2;
-    const totW=cols*colW+(cols>1?gap:0);
-    const totH=pad+rows*(iH+gap)-gap+pad+lblH;
+    const cols=2;
+    const duplicate=n<=4;
+    const rows=duplicate?n:Math.ceil(n/2);
+    const SW=600,SH=1800;
+    const pad=20,lblH=100,photoGap=8;
+    const availH=SH-pad*2-lblH;
+    const iH=Math.floor((availH-(rows-1)*photoGap)/rows);
+    const iW=SW-pad*2;
+    const colW=SW;
+    const gap=0;
+    const totW=SW*2;
+    const totH=SH;
+    const VS=1;
 
     const offscreen=document.createElement('canvas');
     offscreen.width=totW; offscreen.height=totH;
@@ -1244,9 +1259,9 @@ async function saveVideo(){
           drawWithFilter(ctx,src,sx,sy,s,s,x,y,iW,iH,flt.id,isVid&&mirror);
         }
       }
-      drawStripLabels(ctx,cols,rows,iH,iW,pad,gap,lblH,colW,col,VS);
-      const photoAreaH=pad+rows*(iH+gap)-gap+pad;
-      if(brd.id!=='none')drawBorder(ctx,brd.id,totW,photoAreaH,col,cols,colW,gap,VS);
+      drawStripLabels(ctx,cols,rows,iH,iW,pad,photoGap,lblH,colW,col,VS);
+      const photoAreaH=pad+rows*(iH+photoGap)-photoGap+pad;
+      if(brd.id!=='none')drawBorder(ctx,brd.id,totW,photoAreaH,col,cols,colW,photoGap,VS);
     }
 
     // ── Render loop for a duration, using given sources ──
