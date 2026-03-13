@@ -881,29 +881,19 @@ function buildStaticStrip(){
   const cols=2;
   const duplicate=n<=4;
   const rows=duplicate?n:Math.ceil(n/2);
-  // Scale content to fit exactly in fixed 1200×1800 canvas
-  const FIXED_W=1200,FIXED_H=1800;
-  const baseW=2*(280+2*14)+8; // 624 at SC=1
-  const baseH=14+rows*(280+8)-8+14+72; // rows*288+92
-  const SC=Math.min(FIXED_W/baseW,FIXED_H/baseH);
-  const iW=Math.round(280*SC),iH=iW;
-  const pad=Math.round(14*SC),gap=Math.round(8*SC),lblH=Math.round(72*SC);
+  const iW=280,iH=280,pad=14,gap=8,lblH=72,SC=1;
   const colW=iW+pad*2;
   const totW=2*colW+gap;
   const totH=pad+rows*(iH+gap)-gap+pad+lblH;
-  const offX=Math.round((FIXED_W-totW)/2);
-  const offY=Math.round((FIXED_H-totH)/2);
-  stripCanvas.width=FIXED_W;stripCanvas.height=FIXED_H;
+  stripCanvas.width=totW;stripCanvas.height=totH;
   const ctx=stripCanvas.getContext('2d');
-  ctx.fillStyle=col.bg;ctx.fillRect(0,0,FIXED_W,FIXED_H);
+  ctx.fillStyle=col.bg;ctx.fillRect(0,0,totW,totH);
   let loaded=0;const imgs=[];
   S.photos.forEach((url,i)=>{
     const img=new Image();img.onload=()=>{
       imgs[i]=img;loaded++;
       if(loaded===n){
-        ctx.save();ctx.translate(offX,offY);
         drawStripPhotos(ctx,imgs,cols,rows,n,iW,iH,pad,gap,lblH,totW,totH,col,brd,flt,colW,SC,duplicate);
-        ctx.restore();
       }
     };img.src=url;
   });
